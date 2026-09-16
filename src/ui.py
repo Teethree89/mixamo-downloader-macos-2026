@@ -1,13 +1,13 @@
-# Stdlib modules
-import json
-
 # Third-party modules
-from PySide6 import QtCore, QtGui, QtWebEngineWidgets, QtWidgets
+from PySide6 import QtCore, QtWebEngineCore, QtWebEngineWidgets, QtWidgets
 
 # Local modules
 from downloader import HEADERS
 from downloader import MixamoDownloader
 from webpage import CustomWebPage
+
+
+MIXAMO_URL = "https://www.mixamo.com/#/"
 
 
 class MixamoDownloaderUI(QtWidgets.QMainWindow):
@@ -19,16 +19,48 @@ class MixamoDownloaderUI(QtWidgets.QMainWindow):
         self.setWindowTitle('Mixamo Downloader — macOS 2026')
         self.setGeometry(100, 100, 1200, 840)
 
+        # Use a persistent profile so Adobe/Mixamo login cookies survive app restarts.
+        self.profile = QtWebEngineCore.QWebEngineProfile("mixamo-downloader", self)
+        self.profile.setPersistentCookiesPolicy(
+            QtWebEngineCore.QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
+        )
+        self.profile.setHttpUserAgent(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/134.0.0.0 Safari/537.36"
+        )
+
         self.browser = QtWebEngineWidgets.QWebEngineView()
-        page = CustomWebPage()
-        page.setUrl(QtCore.QUrl('https://www.mixamo.com'))
-        self.browser.setPage(page)
-        page.retrieved_token.connect(self.apply_token)
+        self.page = CustomWebPage(self.profile, self.browser)
+        self.browser.setPage(self.page)
+        self.page.retrieved_token.connect(self.apply_token)
+        self.browser.loadStarted.connect(lambda: self.append_log("Loading Mixamo…"))
+        self.browser.loadFinished.connect(self.on_mixamo_loaded)
+        self.browser.urlChanged.connect(
+            lambda url: self.append_log(f"Browser: {url.toString()}")
+        )
+
+        settings = self.browser.settings()
+        settings.setAttribute(QtWebEngineCore.QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        settings.setAttribute(QtWebEngineCore.QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
+        settings.setAttribute(QtWebEngineCore.QWebEngineSettings.WebAttribute.JavascriptCanOpenWindows, True)
+        settings.setAttribute(QtWebEngineCore.QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True)
 
         central_widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout()
         layout.setSpacing(14)
         central_widget.setLayout(layout)
+
+        browser_toolbar = QtWidgets.QHBoxLayout()
+        self.reload_btn = QtWidgets.QPushButton("Reload Mixamo")
+        self.reload_btn.clicked.connect(self.browser.reload)
+        self.external_btn = QtWidgets.QPushButton("Open Mixamo")
+        self.external_btn.clicked.connect(lambda: self.browser.setUrl(QtCore.QUrl(MIXAMO_URL)))
+        self.browser_status = QtWidgets.QLabel("Starting browser…")
+        browser_toolbar.addWidget(self.reload_btn)
+        browser_toolbar.addWidget(self.external_btn)
+        browser_toolbar.addWidget(self.browser_status, 1)
+        layout.addLayout(browser_toolbar)
         layout.addWidget(self.browser)
 
         footer_lyt = QtWidgets.QVBoxLayout()
@@ -104,15 +136,30 @@ class MixamoDownloaderUI(QtWidgets.QMainWindow):
 
         self.setCentralWidget(central_widget)
 
+        # Load only after the page has been installed on the view. The previous
+        # version navigated the page before setPage(), which can leave a blank
+        # WebEngine surface on macOS.
+        QtCore.QTimer.singleShot(0, lambda: self.browser.setUrl(QtCore.QUrl(MIXAMO_URL)))
+
     def append_log(self, message):
         self.log_box.appendPlainText(message)
 
+    def on_mixamo_loaded(self, ok):
+        if ok:
+            self.browser_status.setText("Mixamo loaded")
+            self.append_log("Mixamo page loaded.")
+        else:
+            self.browser_status.setText("Mixamo failed to load — see status log")
+            self.append_log(
+                "Mixamo WebEngine load failed. Click Reload Mixamo; browser console/errors "
+                "will be mirrored to Terminal."
+            )
+
     def get_access_token(self):
-        script = """
-        var token = localStorage.getItem('access_token');
-        console.log('ACCESS TOKEN:', token);
-        """
-        self.browser.page().runJavaScript(script)
+        # Return the value directly instead of printing the credential into the
+        # JavaScript console. This keeps auth material out of logs/Terminal.
+        script = "localStorage.getItem('access_token');"
+        self.browser.page().runJavaScript(script, self.apply_token)
 
     def apply_token(self, token):
         if not token or token == 'null':
