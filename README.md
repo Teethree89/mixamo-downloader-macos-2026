@@ -1,32 +1,45 @@
-# Mixamo Downloader
-GUI to bulk download animations from [Mixamo](https://www.mixamo.com/).
+# Mixamo Downloader — macOS 2026
 
-This repository contains both the Python source code (in the `/src` folder) and an `.exe` file (in the `/dist` folder) to make things easier to Windows users.
+A macOS/Python 3.13 compatible fork of the Mixamo bulk animation downloader.
 
-### For Python users
+## What changed
 
-Make sure you have [Python 3.10+](https://www.python.org/) installed on your computer, as well as the [PySide2](https://pypi.org/project/PySide2/) package:
+- Ported from **PySide2** to **PySide6** so it runs on current Apple Silicon Macs and Python 3.13.
+- Uses the current PySide6 WebEngine API.
+- Adds **Prefer native Mixamo In Place when available**.
+- Logs whether a clip exposed a native Mixamo In Place parameter or had to retain authored root motion.
+- Resolves `mixamo_anims.json` relative to the script directory, so launching from another working directory works correctly.
+- Adds request timeouts and basic export failure reporting.
+
+## Install
+
+From Terminal:
 
 ```bash
-pip install PySide2
+python3 -m pip install PySide6 requests
 ```
 
-Download the files from the `/src` folder to your own local directory, and double-click on the `main.pyw` script to launch the GUI.
+## Run
 
-### For non-technical users
-If you don't have Python installed on your computer or you don't want to mess with all that coding stuff, download the `/dist` folder to your computer (~300MB) and run the `mixamo_downloader.exe`.
+Clone/download this repository, then:
 
-## How to use the Mixamo Downloader
+```bash
+cd mixamo-downloader-macos-2026/src
+python3 main.pyw
+```
 
-1. Log into your Mixamo account.
-2. Select/upload the character you want to animate.
-3. Choose between downloading `All animations`, `Animations containing the word` and the `T-Pose (with skin)`.
-4. You can optionally set an output folder where all animations will be saved.
+Log into Mixamo inside the embedded browser and select/upload the character you want to animate.
 
-   > If no output folder is set, FBX files will be downloaded to the folder where the program is running.
-  
-5. Press the `Start download` button and wait until it's done.
-6. You can cancel the process at any time by pressing the `Stop` button.
+Choose one of:
 
-> [!IMPORTANT]
-> Downloading all animations can be quite slow. We're dealing with a total of 2346 animations, so don't expect it to be lighting fast.
+- **All animations**
+- **Animations containing the word**
+- **T-Pose (with skin)**
+
+Choose an output folder, then leave **Prefer native Mixamo In Place when available** enabled if you want locomotion clips to use Mixamo's own in-place variant wherever the animation metadata exposes that control.
+
+> Native In Place is intentionally conservative. The downloader only changes an animation when Mixamo's returned parameter metadata clearly identifies an In Place control. Animations without that parameter are downloaded unchanged rather than attempting to zero root motion locally.
+
+## Important
+
+Mixamo's animation API is not formally documented. The downloader reads the animation-specific `gms_hash` metadata returned by Mixamo and only opts into In Place when that metadata explicitly exposes it. The status log shows the decision for each clip.
